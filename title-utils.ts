@@ -1,7 +1,7 @@
 import { requestUrl } from "obsidian";
 
 const REDDIT_USER_AGENT =
-  "obsidian-auto-link-title/1.5.5 (title fetch; local Obsidian plugin)";
+  "obsidian-auto-link-title/1.5.6 (title fetch; local Obsidian plugin)";
 
 function blank(text: string | null | undefined): boolean {
   return text === undefined || text === null || text.trim() === "";
