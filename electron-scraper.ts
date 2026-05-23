@@ -1,13 +1,11 @@
 const electronPkg = require("electron");
-import { request } from "obsidian";
-
-function blank(text: string): boolean {
-  return text === undefined || text === null || text === "";
-}
-
-function notBlank(text: string): boolean {
-  return !blank(text);
-}
+import {
+  fetchHtmlTitleOrFileSegment,
+  fetchRedditTitle,
+  getUrlFinalSegment,
+  isUsableTitle,
+  normalizeUrl,
+} from "title-utils";
 
 // async wrapper to load a url and settle on load finish or fail
 async function load(window: any, url: string): Promise<void> {
@@ -46,54 +44,31 @@ async function electronGetPageTitle(url: string): Promise<string> {
       const title = window.webContents.getTitle();
       window.destroy();
 
-      if (notBlank(title)) {
+      if (isUsableTitle(title)) {
         return title;
       } else {
-        return url;
+        return (await fetchRedditTitle(url)) || url;
       }
     } catch (ex) {
       window.destroy();
-      return url;
+      return (await fetchRedditTitle(url)) || url;
     }
   } catch (ex) {
     console.error(ex);
-    return "";
+    return (await fetchRedditTitle(url)) || "";
   }
 }
 
 async function nonElectronGetPageTitle(url: string): Promise<string> {
   try {
-    const html = await request({ url });
+    const title = await fetchHtmlTitleOrFileSegment(url);
+    if (title !== "") return title;
 
-    const doc = new DOMParser().parseFromString(html, "text/html");
-    const title = doc.querySelectorAll("title")[0];
-
-    if (title == null || blank(title?.innerText)) {
-      // If site is javascript based and has a no-title attribute when unloaded, use it.
-      var noTitle = title?.getAttr("no-title");
-      if (notBlank(noTitle)) {
-        return noTitle;
-      }
-
-      // Otherwise if the site has no title/requires javascript simply return Title Unknown
-      return url;
-    }
-
-    return title.innerText;
+    return (await fetchRedditTitle(url)) || url;
   } catch (ex) {
     console.error(ex);
 
-    return "";
-  }
-}
-
-function getUrlFinalSegment(url: string): string {
-  try {
-    const segments = new URL(url).pathname.split('/');
-    const last = segments.pop() || segments.pop(); // Handle potential trailing slash
-    return last;
-  } catch (_) {
-    return "File"
+    return (await fetchRedditTitle(url)) || "";
   }
 }
 
@@ -107,8 +82,12 @@ async function tryGetFileType(url: string) {
     }
 
     // Ensure site is an actual HTML page and not a pdf or 3 gigabyte video file.
-    let contentType = response.headers.get("content-type");
-    if (!contentType.includes("text/html")) {
+    let contentType = response.headers.get("content-type") || "";
+    if (
+      contentType !== "" &&
+      !contentType.includes("text/html") &&
+      !contentType.includes("application/xhtml+xml")
+    ) {
       return getUrlFinalSegment(url);
     }
     return null;
@@ -119,9 +98,10 @@ async function tryGetFileType(url: string) {
 
 export default async function getPageTitle(url: string): Promise<string> {
   // If we're on Desktop use the Electron scraper
-  if (!(url.startsWith("http") || url.startsWith("https"))) {
-    url = "https://" + url;
-  }
+  url = normalizeUrl(url);
+
+  const redditTitle = await fetchRedditTitle(url);
+  if (redditTitle !== "") return redditTitle;
 
   // Try to do a HEAD request to see if the site is reachable and if it's an HTML page
   // If we error out due to CORS, we'll just try to scrape the page anyway.

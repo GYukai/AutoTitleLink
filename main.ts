@@ -3,6 +3,7 @@ import { EditorExtensions } from "editor-enhancements";
 import { Editor, Plugin, Notice } from "obsidian";
 import getPageTitle from "scraper";
 import getElectronPageTitle from "electron-scraper";
+import { fetchRedditTitle, isUsableTitle } from "title-utils";
 import {
   AutoLinkTitleSettingTab,
   AutoLinkTitleSettings,
@@ -329,7 +330,7 @@ export default class AutoLinkTitle extends Plugin {
         },
       });
       const data = await response.json();
-      return data.title;
+      return data.title || "";
     } catch (error) {
       console.error(error);
       return "";
@@ -342,7 +343,12 @@ export default class AutoLinkTitle extends Plugin {
       title = await this.fetchUrlTitleViaLinkPreview(url);
       console.log(`Title via Link Preview: ${title}`);
 
-      if (title === "") {
+      if (!isUsableTitle(title)) {
+        title = await fetchRedditTitle(url);
+        console.log(`Title via Reddit API: ${title}`);
+      }
+
+      if (!isUsableTitle(title)) {
         console.log("Title via Link Preview failed, falling back to scraper");
         if (this.settings.useNewScraper) {
           console.log("Using new scraper");
@@ -357,6 +363,9 @@ export default class AutoLinkTitle extends Plugin {
       title =
         title.replace(/(\r\n|\n|\r)/gm, "").trim() ||
         "Title Unavailable | Site Unreachable";
+      if (!isUsableTitle(title)) {
+        title = "Title Unavailable | Site Unreachable";
+      }
       return title;
     } catch (error) {
       console.error(error);
